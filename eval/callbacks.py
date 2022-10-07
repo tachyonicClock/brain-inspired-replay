@@ -39,7 +39,7 @@ def _sample_cb(log, config, visdom=None, pdf=None, test_datasets=None, sample_si
 
 
 def _eval_cb(log, test_datasets, visdom=None, progress_dict=None, iters_per_task=None, test_size=None,
-             classes_per_task=None, scenario="none"):
+             classes_per_task=None, scenario="none", feature_extractor=None):
     '''Initiates function for evaluating performance of classifier (in terms of accuracy).
 
     [test_datasets]     <list> of <Datasets>; also if only 1 task, it should be presented as a list!
@@ -55,7 +55,7 @@ def _eval_cb(log, test_datasets, visdom=None, progress_dict=None, iters_per_task
         if iteration % log == 0:
             evaluate.test_accuracy(classifier, test_datasets, task, iteration,
                                    classes_per_task=classes_per_task, scenario=scenario, progress_dict=progress_dict,
-                                   test_size=test_size, visdom=visdom)
+                                   test_size=test_size, visdom=visdom, feature_extractor=feature_extractor)
 
     ## Return the callback-function (except if neither visdom or [progress_dict] is selected!)
     return eval_cb if ((visdom is not None) or (progress_dict is not None)) else None

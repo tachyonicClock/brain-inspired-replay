@@ -1,3 +1,15 @@
+# Brain Inspired Replay Experiments
+
+This is a fork of https://github.com/GMvandeVen/brain-inspired-replay. The fork was made to implement the following scenarios for an upcoming publication.
+
+- Adds `splitCIFAR10` scenario
+- Adds `splitFMNIST` scenario
+- Add `splitCORE50` NC scenario
+- Add `--extract-features` option to use a pre-trained Resnet50 feature extractor. This is similar to the original authors internal replay, but matches other experiments in my work.
+- Add `run_experiments.sh` to run 10 runs of each relevant scenario
+
+> Please note these are quick and dirty modifications on my part, so certain options/combinations are likely broken.
+
 # Brain-Inspired Replay
 A PyTorch implementation of the continual learning experiments with deep neural networks described in the 
 following paper:

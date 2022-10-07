@@ -13,7 +13,7 @@ import utils
 ####-----------------------------####
 
 def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, allowed_classes=None,
-             no_task_mask=False, task=None):
+             no_task_mask=False, task=None, feature_extractor=None):
     '''Evaluate the accuracy (= proportion of samples classified correctly) of a classifier ([model]) on [dataset].
 
     [allowed_classes]   None or <list> containing all "active classes" between which should be chosen
@@ -41,8 +41,13 @@ def validate(model, dataset, batch_size=128, test_size=1024, verbose=True, allow
         if test_size:
             if total_tested >= test_size:
                 break
+        
         # -evaluate model (if requested, only on [allowed_classes])
         data, labels = data.to(device), labels.to(device)
+
+        if feature_extractor is not None:
+            data = feature_extractor.forward(data)
+
         labels = labels - allowed_classes[0] if (allowed_classes is not None) else labels
         with torch.no_grad():
             scores = model.classify(data, not_hidden=True)
@@ -70,7 +75,7 @@ def initiate_progress_dict(n_tasks):
 
 
 def test_accuracy(model, datasets, current_task, iteration, classes_per_task=None, scenario="none",
-                  progress_dict=None, test_size=None, visdom=None, verbose=False, no_task_mask=False):
+                  progress_dict=None, test_size=None, visdom=None, verbose=False, no_task_mask=False, feature_extractor=None):
     '''Evaluate accuracy of a classifier (=[model]) on all tasks so far (= up to [current_task]) using [datasets].
 
     [progress_dict]    None or <dict> of all measures to keep track of, to which results will be appended to
@@ -90,7 +95,7 @@ def test_accuracy(model, datasets, current_task, iteration, classes_per_task=Non
             else:
                 allowed_classes = None
             accs.append(validate(model, datasets[i], test_size=test_size, verbose=verbose,
-                                  allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i+1))
+                                  allowed_classes=allowed_classes, no_task_mask=no_task_mask, task=i+1, feature_extractor=feature_extractor))
         else:
             accs.append(0)
     average_accs = sum(

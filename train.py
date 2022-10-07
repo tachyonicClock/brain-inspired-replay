@@ -60,7 +60,7 @@ def train(model, train_loader, iters, loss_cbs=list(), eval_cbs=list(), save_eve
 
 def train_cl(model, train_datasets, replay_mode="none", scenario="task", rnt=None, classes_per_task=None,
              iters=2000, batch_size=32, batch_size_replay=None, loss_cbs=list(), eval_cbs=list(), sample_cbs=list(),
-             generator=None, gen_iters=0, gen_loss_cbs=list(), feedback=False, reinit=False, args=None, only_last=False):
+             generator=None, gen_iters=0, gen_loss_cbs=list(), feedback=False, reinit=False, args=None, only_last=False, feature_extractor=None):
     '''Train a model (with a "train_a_batch" method) on multiple tasks, with replay-strategy specified by [replay_mode].
 
     [model]             <nn.Module> main model to optimize across all tasks
@@ -189,6 +189,10 @@ def train_cl(model, train_datasets, replay_mode="none", scenario="task", rnt=Non
                     if batch_size_to_use == 1:
                         y_temp = torch.tensor([y_temp])            #--> correct dimensions if batch-size is 1
                     y_.append(y_temp.to(device))
+
+            # Extract features with pre-trained model
+            if feature_extractor:
+                x = feature_extractor.forward(x)
 
 
             #####-----REPLAYED BATCH-----#####

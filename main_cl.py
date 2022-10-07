@@ -6,6 +6,7 @@ import torch
 from torch import optim
 from torch.utils.data import ConcatDataset
 from torch.nn import functional as F
+from data.feature_extractor import r18_extractor
 
 # -custom-written libraries
 import options
@@ -77,6 +78,9 @@ def run(args, verbose=False):
     #----------------#
     #----- DATA -----#
     #----------------#
+    # If we want to extract features, it is best NOT to use the mini core50 
+    # dataset
+    use_mini_core50 = not utils.checkattr(args, "extract_features")
 
     # Prepare data for chosen experiment
     if verbose:
@@ -85,8 +89,21 @@ def run(args, verbose=False):
         name=args.experiment, scenario=args.scenario, tasks=args.tasks, data_dir=args.d_dir,
         normalize=True if utils.checkattr(args, "normalize") else False,
         augment=True if utils.checkattr(args, "augment") else False,
-        verbose=verbose, exception=True if args.seed<10 else False, only_test=(not args.train)
+        verbose=verbose, exception=True if args.seed<10 else False, only_test=(not args.train),
+        use_mini_core50=use_mini_core50
     )
+
+    feature_extractor = None
+    if utils.checkattr(args, "extract_features"):
+        # Set the size of the feature vector to be a shape that is compatible 
+        # with the model. This is not ideal because we no longer care about the
+        # shape of the vector, but it is the easiest way to do it.
+        config['size'] = 16
+        config['channels'] = 2
+        print("UPDATE CONFIG")
+        feature_extractor = r18_extractor().to(device)
+        args.no_samples = True
+        use_mini_core50 = False
 
 
     #-------------------------------------------------------------------------------------------------#
@@ -270,12 +287,12 @@ def run(args, verbose=False):
     # -visdom (i.e., after each [acc_log]
     eval_cb = cb._eval_cb(
         log=args.acc_log, test_datasets=test_datasets, visdom=visdom, progress_dict=None, iters_per_task=args.iters,
-        test_size=args.acc_n, classes_per_task=classes_per_task, scenario=args.scenario,
+        test_size=args.acc_n, classes_per_task=classes_per_task, scenario=args.scenario, feature_extractor=feature_extractor
     )
     # -pdf / reporting: summary plots (i.e, only after each task)
     eval_cb_full = cb._eval_cb(
         log=args.iters, test_datasets=test_datasets, progress_dict=progress_dict,
-        iters_per_task=args.iters, classes_per_task=classes_per_task, scenario=args.scenario,
+        iters_per_task=args.iters, classes_per_task=classes_per_task, scenario=args.scenario, feature_extractor=feature_extractor
     )
     # -visualize feature space
     latent_space_cb = cb._latent_space_cb(
@@ -302,7 +319,8 @@ def run(args, verbose=False):
             generator=generator, gen_iters=g_iters, gen_loss_cbs=generator_loss_cbs,
             feedback=utils.checkattr(args, 'feedback'), sample_cbs=sample_cbs, eval_cbs=eval_cbs,
             loss_cbs=generator_loss_cbs if utils.checkattr(args, 'feedback') else solver_loss_cbs,
-            args=args, reinit=utils.checkattr(args, 'reinit'), only_last=utils.checkattr(args, 'only_last')
+            args=args, reinit=utils.checkattr(args, 'reinit'), only_last=utils.checkattr(args, 'only_last'),
+            feature_extractor=feature_extractor
         )
         # Save evaluation metrics measured throughout training
         file_name = "{}/dict-{}".format(args.r_dir, param_stamp)
@@ -347,7 +365,8 @@ def run(args, verbose=False):
     # Evaluate accuracy of final model on full test-set
     accs = [evaluate.validate(
         model, test_datasets[i], verbose=False, test_size=None, task=i+1,
-        allowed_classes=list(range(classes_per_task*i, classes_per_task*(i+1))) if args.scenario=="task" else None
+        allowed_classes=list(range(classes_per_task*i, classes_per_task*(i+1))) if args.scenario=="task" else None,
+        feature_extractor=feature_extractor
     ) for i in range(args.tasks)]
     average_accs = sum(accs)/args.tasks
     # -print on screen
@@ -372,7 +391,7 @@ def run(args, verbose=False):
     #----- EVALUATION of GENERATOR -----#
     #-----------------------------------#
 
-    if (utils.checkattr(args, 'feedback') or train_gen) and args.experiment=="CIFAR100" and args.scenario=="class":
+    if (utils.checkattr(args, 'feedback') or train_gen) and args.experiment=="CIFAR100" and args.scenario=="class" and feature_extractor == None:
 
         # Dataset and model to be used
         test_set = ConcatDataset(test_datasets)

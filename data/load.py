@@ -6,7 +6,7 @@ from data.available import AVAILABLE_DATASETS, AVAILABLE_TRANSFORMS, DATASET_CON
 from data.manipulate import ReducedDataset, SubDataset, TransformedDataset, permutate_image_pixels
 
 def get_dataset(name, type='train', download=True, capacity=None, permutation=None, dir='./store/datasets',
-                verbose=False, augment=False, normalize=False, target_transform=None, valid_prop=0.):
+                verbose=False, augment=False, normalize=False, target_transform=None, valid_prop=0., use_mini_core50=False):
     '''Create [train|valid|test]-dataset.'''
 
     data_name = 'mnist' if name in ('mnist28') else name
@@ -21,9 +21,15 @@ def get_dataset(name, type='train', download=True, capacity=None, permutation=No
         transforms_list.append(transforms.Lambda(lambda x, p=permutation: permutate_image_pixels(x, p)))
     dataset_transform = transforms.Compose(transforms_list)
 
+    kwargs = {}
+    if use_mini_core50 and name == 'core50':
+        kwargs['mini'] = True
+        print("Using mini 32x32 CORe50 dataset")
+    elif name == 'core50':
+        print("Using full size 128x128 CORe50 dataset")
     # load data-set
-    dataset = dataset_class('{dir}/{name}'.format(dir=dir, name=data_name), train=False if type=='test' else True,
-                            download=download, transform=dataset_transform, target_transform=target_transform)
+    dataset = dataset_class('{dir}'.format(dir=dir, name=data_name), train=False if type=='test' else True,
+                            download=download, transform=dataset_transform, target_transform=target_transform, **kwargs)
 
     # if relevant, select "train" or "validation"-set from training-part of data
     # NOTE: this split assumes order of items in training-dataset is random!
@@ -81,7 +87,7 @@ def get_singletask_experiment(name, data_dir="./store/datasets", normalize=False
 
 
 def get_multitask_experiment(name, scenario, tasks, data_dir="./store/datasets", normalize=False, augment=False,
-                             only_config=False, verbose=False, exception=False, only_test=False):
+                             only_config=False, verbose=False, exception=False, only_test=False, use_mini_core50=False):
     '''Load, organize and return train- and test-dataset for requested multi-task experiment.'''
 
     ## NOTE: option 'normalize' and 'augment' only implemented for CIFAR-based experiments.
@@ -150,6 +156,37 @@ def get_multitask_experiment(name, scenario, tasks, data_dir="./store/datasets",
                 if not only_test:
                     train_datasets.append(SubDataset(mnist_train, labels, target_transform=target_transform))
                 test_datasets.append(SubDataset(mnist_test, labels, target_transform=target_transform))
+    elif name == 'splitFMNIST':
+        # check for number of tasks
+        if tasks != 5:
+            raise ValueError("FMNIST only works with 5 tasks!")
+        # # configurations
+        config = DATASET_CONFIGS['fmnist']
+        classes_per_task = 2
+        if not only_config:
+            # prepare permutation to shuffle label-ids (to create different class batches for each random seed)
+            permutation = np.array(list(range(10))) if exception else np.random.permutation(list(range(10)))
+            target_transform = transforms.Lambda(lambda y, p=permutation: int(p[y]))
+            # prepare train and test datasets with all classes
+            if not only_test:
+                mnist_train = get_dataset('fmnist', type="train", dir=data_dir, target_transform=target_transform,
+                                          verbose=verbose)
+            mnist_test = get_dataset('fmnist', type="test", dir=data_dir, target_transform=target_transform,
+                                     verbose=verbose)
+            # generate labels-per-task
+            labels_per_task = [
+                list(np.array(range(classes_per_task)) + classes_per_task * task_id) for task_id in range(tasks)
+            ]
+            # split them up into sub-tasks
+            train_datasets = []
+            test_datasets = []
+            for labels in labels_per_task:
+                target_transform = transforms.Lambda(
+                    lambda y, x=labels[0]: y - x
+                ) if scenario=='domain' else None
+                if not only_test:
+                    train_datasets.append(SubDataset(mnist_train, labels, target_transform=target_transform))
+                test_datasets.append(SubDataset(mnist_test, labels, target_transform=target_transform))
     elif name == 'CIFAR100':
         # check for number of tasks
         if tasks>100:
@@ -179,6 +216,65 @@ def get_multitask_experiment(name, scenario, tasks, data_dir="./store/datasets",
                 if not only_test:
                     train_datasets.append(SubDataset(cifar100_train, labels, target_transform=target_transform))
                 test_datasets.append(SubDataset(cifar100_test, labels, target_transform=target_transform))
+    elif name in ['splitCIFAR10']:
+            # check for number of tasks
+            if tasks>10:
+                raise ValueError("Experiment 'CIFAR100' cannot have more than 100 tasks!")
+            # configurations
+            config = DATASET_CONFIGS['cifar10']
+            classes_per_task = int(np.floor(config['classes'] / tasks))
+            if not only_config:
+                # prepare permutation to shuffle label-ids (to create different class batches for each random seed)
+                permutation = np.random.permutation(list(range(config['classes'])))
+                target_transform = transforms.Lambda(lambda y, x=permutation: int(permutation[y]))
+                # prepare train and test datasets with all classes
+                if not only_test:
+                    cifar10_train = get_dataset('cifar10', type="train", dir=data_dir, normalize=normalize,
+                                                augment=augment, target_transform=target_transform, verbose=verbose)
+                cifar10_test = get_dataset('cifar10', type="test", dir=data_dir, normalize=normalize,
+                                            target_transform=target_transform, verbose=verbose)
+                # generate labels-per-task
+                labels_per_task = [
+                    list(np.array(range(classes_per_task)) + classes_per_task * task_id) for task_id in range(tasks)
+                ]
+                # split them up into sub-tasks
+                train_datasets = []
+                test_datasets = []
+                for labels in labels_per_task:
+                    target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if scenario=='domain' else None
+                    if not only_test:
+                        train_datasets.append(SubDataset(cifar10_train, labels, target_transform=target_transform))
+                    test_datasets.append(SubDataset(cifar10_test, labels, target_transform=target_transform))
+    elif name in ['splitCORE50']:
+            # check for number of tasks
+            if tasks>10:
+                raise ValueError("Experiment 'CIFAR100' cannot have more than 100 tasks!")
+            # configurations
+            config = DATASET_CONFIGS['core50']
+            classes_per_task = int(np.floor(config['classes'] / tasks))
+            if not only_config:
+                # prepare permutation to shuffle label-ids (to create different class batches for each random seed)
+                permutation = np.random.permutation(list(range(config['classes'])))
+                target_transform = transforms.Lambda(lambda y, x=permutation: int(permutation[y]))
+                # prepare train and test datasets with all classes
+                if not only_test:
+                    core50_train = get_dataset('core50', type="train", dir=data_dir, normalize=normalize,
+                                                augment=augment, target_transform=target_transform, verbose=verbose, use_mini_core50=use_mini_core50)
+                core50_test = get_dataset('core50', type="test", dir=data_dir, normalize=normalize,
+                                            target_transform=target_transform, verbose=verbose, use_mini_core50=use_mini_core50)
+                # generate labels-per-task
+                labels_per_task = [
+                    list(np.array(range(classes_per_task)) + classes_per_task * task_id) for task_id in range(tasks)
+                ]
+                # split them up into sub-tasks
+                train_datasets = []
+                test_datasets = []
+                for labels in labels_per_task:
+                    target_transform = transforms.Lambda(lambda y, x=labels[0]: y-x) if scenario=='domain' else None
+                    if not only_test:
+                        train_datasets.append(SubDataset(core50_train, labels, target_transform=target_transform))
+                    test_datasets.append(SubDataset(core50_test, labels, target_transform=target_transform))
+
     else:
         raise RuntimeError('Given undefined experiment: {}'.format(name))
 
@@ -186,7 +282,12 @@ def get_multitask_experiment(name, scenario, tasks, data_dir="./store/datasets",
     config['classes'] = classes_per_task if scenario=='domain' else classes_per_task*tasks
     config['normalize'] = normalize if name=='CIFAR100' else False
     if config['normalize']:
-        config['denormalize'] = AVAILABLE_TRANSFORMS["cifar100_denorm"]
+        if name == 'CIFAR100':
+            config['denormalize'] = AVAILABLE_TRANSFORMS["cifar100_denorm"]
+        elif name == 'splitCIFAR10':
+            config['denormalize'] = AVAILABLE_TRANSFORMS["cifar10_denorm"]
+        elif name == 'splitCORE50':
+            config['denormalize'] = AVAILABLE_TRANSFORMS["core50_denorm"]
 
     # Return tuple of train-, validation- and test-dataset, config-dictionary and number of classes per task
     return config if only_config else ((train_datasets, test_datasets), config, classes_per_task)
